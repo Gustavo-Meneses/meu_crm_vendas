@@ -5,7 +5,7 @@ import hashlib
 import json
 
 # --- CONFIGURAÇÃO INICIAL ---
-st.set_page_config(page_title="Gemini CRM - Memory Mode", layout="wide", page_icon="🧠")
+st.set_page_config(page_title="Meneses CRM - Memory Mode", layout="wide", page_icon="🧠")
 
 # --- INICIALIZAÇÃO DA BASE DE DADOS (EM MEMÓRIA) ---
 # O st.session_state mantém os dados durante a navegação do usuário
