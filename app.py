@@ -62,7 +62,7 @@ if st.session_state['logged_in']:
         st.rerun()
 
     # --- CONFIGURAÇÃO DO MODELO (DEBUG MODE) ---
-genai.configure(api_key=st.secrets["GEMINI_KEY"])
+genai.configure(api_key=st.secrets["AIzaSyBlTfOtr6rZ9ycHuR5Ebk4uM-gmyGNbPAU"])
 
 def get_model():
     try:
