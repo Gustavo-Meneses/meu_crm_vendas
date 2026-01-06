@@ -12,16 +12,25 @@ st.set_page_config(page_title="Gemini CRM Pro", layout="wide")
 conn = sqlite3.connect('crm_data.db', check_same_thread=False)
 c = conn.cursor()
 
-# Criar tabelas
 c.execute('CREATE TABLE IF NOT EXISTS users (username TEXT, password TEXT)')
 c.execute('CREATE TABLE IF NOT EXISTS leads (nome TEXT, empresa TEXT, status TEXT, historico TEXT, score INTEGER, valor REAL)')
 conn.commit()
 
+# --- FUNÇÕES DE IA (Blindadas) ---
+def inicializar_ia():
+    try:
+        # Pega a chave do campo SECRETS do Streamlit
+        api_key = st.secrets["GEMINI_KEY"]
+        genai.configure(api_key=api_key)
+        # Força o uso do nome estável do modelo
+        return genai.GenerativeModel(model_name='models/gemini-1.5-flash')
+    except Exception as e:
+        st.error(f"Erro ao configurar IA: {e}")
+        return None
+
 # --- FUNÇÕES DE SEGURANÇA ---
 def make_hashes(password): return hashlib.sha256(str.encode(password)).hexdigest()
-
-def check_hashes(password, hashed_text):
-    return make_hashes(password) == hashed_text
+def check_hashes(password, hashed_text): return make_hashes(password) == hashed_text
 
 # --- INTERFACE DE LOGIN ---
 if 'logged_in' not in st.session_state:
@@ -39,7 +48,6 @@ if not st.session_state['logged_in']:
             c.execute('INSERT INTO users(username,password) VALUES (?,?)', (new_user, make_hashes(new_password)))
             conn.commit()
             st.success("Conta criada! Vá em Login.")
-
     elif choice == "Login":
         username = st.sidebar.text_input("Usuário")
         password = st.sidebar.text_input("Senha", type='password')
@@ -52,15 +60,10 @@ if not st.session_state['logged_in']:
             else:
                 st.error("Usuário ou Senha incorretos")
 
-# --- APP PRINCIPAL (Após Login) ---
+# --- APP PRINCIPAL ---
 else:
-    # 1. Configuração do Gemini (Busca a chave no cofre do Secrets)
-    try:
-        genai.configure(api_key=st.secrets["GEMINI_KEY"])
-        model = genai.GenerativeModel('gemini-1.5-flash')
-    except Exception as e:
-        st.error("Erro na API Key. Verifique o campo Secrets no Streamlit.")
-
+    model = inicializar_ia()
+    
     st.sidebar.title("Navegação")
     page = st.sidebar.radio("Ir para:", ["Dashboard", "Adicionar Lead (IA)", "Chat com CRM"])
     
@@ -71,50 +74,32 @@ else:
     if page == "Dashboard":
         st.header("📊 Painel de Vendas")
         df = pd.read_sql_query("SELECT * FROM leads", conn)
-        
         if not df.empty:
             st.dataframe(df, use_container_width=True)
-            total = df['valor'].sum()
-            st.metric("Faturamento em Pipeline", f"R$ {total:,.2f}")
+            st.metric("Total em Propostas", f"R$ {df['valor'].sum():,.2f}")
         else:
-            st.info("Nenhum lead cadastrado ainda.")
+            st.info("Nenhum lead cadastrado.")
 
     elif page == "Adicionar Lead (IA)":
         st.header("✍️ Entrada Inteligente")
-        texto_bruto = st.text_area("Descreva a interação (Ex: Falei com Marcos da empresa X, valor 5000...)")
-        
-        if st.button("Processar com Gemini"):
-            if texto_bruto:
-                try:
-                    prompt = f"""Extraia nome, empresa, status (Prospecção, Reunião, Proposta, Fechado), 
-                    resumo_conversa, score (0-100) e valor numérico do texto abaixo. 
-                    Responda APENAS um JSON puro. Texto: {texto_bruto}"""
-                    
-                    response = model.generate_content(prompt)
-                    # Limpeza de resposta para garantir JSON puro
-                    texto_limpo = response.text.replace('```json', '').replace('```', '').strip()
-                    dados = json.loads(texto_limpo)
-                    
-                    c.execute('INSERT INTO leads VALUES (?,?,?,?,?,?)', 
-                              (dados.get('nome', 'N/A'), dados.get('empresa', 'N/A'), 
-                               dados.get('status', 'Prospecção'), dados.get('resumo_conversa', ''), 
-                               dados.get('score', 0), dados.get('valor', 0)))
-                    conn.commit()
-                    st.success(f"Lead {dados.get('nome')} adicionado com sucesso!")
-                except Exception as e:
-                    st.error(f"Erro ao processar com IA: {e}")
-            else:
-                st.warning("Por favor, digite algum texto.")
+        texto = st.text_area("Descreva a interação:")
+        if st.button("Processar com Gemini") and model:
+            try:
+                prompt = f"Retorne APENAS um JSON para: {texto}. Campos: nome, empresa, status, resumo_conversa, score, valor."
+                response = model.generate_content(prompt)
+                limpo = response.text.replace('```json', '').replace('```', '').strip()
+                d = json.loads(limpo)
+                c.execute('INSERT INTO leads VALUES (?,?,?,?,?,?)', 
+                          (d.get('nome',''), d.get('empresa',''), d.get('status',''), d.get('resumo_conversa',''), d.get('score',0), d.get('valor',0)))
+                conn.commit()
+                st.success("Lead cadastrado!")
+            except Exception as e:
+                st.error(f"Erro: {e}")
 
     elif page == "Chat com CRM":
-        st.header("🤖 Pergunte ao seu CRM")
-        df = pd.read_sql_query("SELECT * FROM leads", conn)
-        pergunta = st.text_input("Ex: Qual meu lead com maior valor?")
-        
-        if pergunta:
-            if not df.empty:
-                contexto = f"Dados atuais do CRM: {df.to_string()}. Pergunta: {pergunta}"
-                response = model.generate_content(contexto)
-                st.write(response.text)
-            else:
-                st.warning("O banco de dados está vazio.")
+        st.header("🤖 Pergunte ao CRM")
+        pergunta = st.text_input("O que deseja saber?")
+        if pergunta and model:
+            df = pd.read_sql_query("SELECT * FROM leads", conn)
+            resp = model.generate_content(f"Dados: {df.to_string()}. Pergunta: {pergunta}")
+            st.write(resp.text)
