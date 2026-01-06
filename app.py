@@ -8,34 +8,34 @@ import json
 # --- CONFIGURAÇÃO INICIAL ---
 st.set_page_config(page_title="Gemini CRM Pro", layout="wide")
 
-# Conexão com Banco de Dados
 conn = sqlite3.connect('crm_data.db', check_same_thread=False)
 c = conn.cursor()
 c.execute('CREATE TABLE IF NOT EXISTS users (username TEXT, password TEXT)')
 c.execute('CREATE TABLE IF NOT EXISTS leads (nome TEXT, empresa TEXT, status TEXT, historico TEXT, score INTEGER, valor REAL)')
 conn.commit()
 
-# --- FUNÇÃO DE IA REVISADA (FORÇANDO VERSÃO ESTÁVEL) ---
+# --- FUNÇÃO DE IA AUTO-DESCOBERTA ---
 def processar_com_ia(prompt_text):
     try:
-        # Configura a chave
-        api_key = st.secrets["GEMINI_KEY"]
-        genai.configure(api_key=api_key)
+        genai.configure(api_key=st.secrets["GEMINI_KEY"])
         
-        # Tentamos usar o modelo com o nome que a versão estável reconhece
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # LISTA OS MODELOS DISPONÍVEIS NA SUA CONTA
+        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        if not models:
+            raise Exception("Sua chave API não tem acesso a nenhum modelo de geração de conteúdo.")
+        
+        # TENTA O FLASH, SE NÃO TIVER, PEGA O PRIMEIRO DA LISTA
+        modelo_escolhido = next((m for m in models if "gemini-1.5-flash" in m), models[0])
+        
+        model = genai.GenerativeModel(modelo_escolhido)
         response = model.generate_content(prompt_text)
         return response.text
         
     except Exception as e:
-        # Se falhar, tentamos listar os modelos para o log (ajuda no debug)
-        try:
-            models = [m.name for m in genai.list_models()]
-            raise Exception(f"Erro 404. Modelos disponíveis na sua chave: {models}")
-        except:
-            raise Exception(f"Falha total na comunicação: {str(e)}")
+        raise Exception(f"Erro na API: {str(e)}")
 
-# --- FUNÇÕES DE SEGURANÇA ---
+# --- SEGURANÇA ---
 def make_hashes(password): return hashlib.sha256(str.encode(password)).hexdigest()
 def check_hashes(password, hashed_text): return make_hashes(password) == hashed_text
 
@@ -45,61 +45,37 @@ if 'logged_in' not in st.session_state:
 
 if not st.session_state['logged_in']:
     st.title("🚀 Gemini CRM - Login")
-    menu = ["Login", "Registrar"]
-    choice = st.sidebar.selectbox("Menu", menu)
-    if choice == "Registrar":
-        u = st.text_input("Usuário")
-        p = st.text_input("Senha", type='password')
-        if st.button("Criar Conta"):
-            c.execute('INSERT INTO users VALUES (?,?)', (u, make_hashes(p)))
-            conn.commit()
-            st.success("Conta criada!")
-    else:
-        u = st.sidebar.text_input("Usuário")
-        p = st.sidebar.text_input("Senha", type='password')
-        if st.sidebar.button("Entrar"):
-            c.execute('SELECT password FROM users WHERE username =?', (u,))
-            data = c.fetchone()
-            if data and check_hashes(p, data[0]):
-                st.session_state['logged_in'] = True
-                st.session_state['user'] = u
-                st.rerun()
-            else:
-                st.error("Usuário ou Senha incorretos")
+    u = st.text_input("Usuário")
+    p = st.text_input("Senha", type='password')
+    if st.button("Entrar"):
+        c.execute('SELECT password FROM users WHERE username =?', (u,))
+        data = c.fetchone()
+        if data and check_hashes(p, data[0]):
+            st.session_state['logged_in'] = True
+            st.rerun()
+        else: st.error("Erro de login")
+    if st.button("Registrar novo"):
+        c.execute('INSERT INTO users VALUES (?,?)', (u, make_hashes(p)))
+        conn.commit()
+        st.success("Registrado!")
 
 # --- APP PRINCIPAL ---
 else:
-    st.sidebar.button("Sair", on_click=lambda: st.session_state.update({'logged_in': False}))
-    page = st.sidebar.radio("Menu", ["Dashboard", "Adicionar Lead (IA)", "Chat"])
+    page = st.sidebar.radio("Menu", ["Dashboard", "Adicionar Lead (IA)"])
 
     if page == "Dashboard":
-        st.header("📊 Seus Leads")
         df = pd.read_sql_query("SELECT * FROM leads", conn)
         st.dataframe(df, use_container_width=True)
 
     elif page == "Adicionar Lead (IA)":
-        st.header("✍️ Captura Inteligente")
-        texto = st.text_area("Descreva o lead ou a reunião:")
-        if st.button("Analisar com Gemini"):
+        texto = st.text_area("Descreva o lead:")
+        if st.button("Analisar"):
             try:
-                prompt = f"Retorne APENAS um JSON puro (sem markdown): {{'nome': '...', 'empresa': '...', 'status': '...', 'resumo_conversa': '...', 'score': 0, 'valor': 0}}. Texto: {texto}"
+                prompt = f"Retorne JSON puro: {{'nome': '...', 'empresa': '...', 'status': '...', 'resumo_conversa': '...', 'score': 0, 'valor': 0}}. Texto: {texto}"
                 res = processar_com_ia(prompt)
-                
-                # Limpeza de resposta para garantir JSON puro
-                json_str = res.replace('```json', '').replace('```', '').strip()
-                d = json.loads(json_str)
-                
-                c.execute('INSERT INTO leads VALUES (?,?,?,?,?,?)', 
-                          (d.get('nome',''), d.get('empresa',''), d.get('status',''), d.get('resumo_conversa',''), d.get('score',0), d.get('valor',0)))
+                d = json.loads(res.replace('```json', '').replace('```', '').strip())
+                c.execute('INSERT INTO leads VALUES (?,?,?,?,?,?)', (d.get('nome',''), d.get('empresa',''), d.get('status',''), d.get('resumo_conversa',''), d.get('score',0), d.get('valor',0)))
                 conn.commit()
-                st.success("Lead salvo!")
+                st.success("Salvo!")
             except Exception as e:
-                st.error(f"Erro: {e}")
-
-    elif page == "Chat":
-        st.header("🤖 Chat com CRM")
-        pergunta = st.text_input("Sua pergunta:")
-        if pergunta:
-            df = pd.read_sql_query("SELECT * FROM leads", conn)
-            res = processar_com_ia(f"Dados: {df.to_string()}. Pergunta: {pergunta}")
-            st.write(res)
+                st.error(f"{e}")
