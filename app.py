@@ -1,235 +1,104 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-import sqlite3
 import google.generativeai as genai
 import hashlib
 import json
-import io
 
 # --- CONFIGURAÇÃO INICIAL ---
-st.set_page_config(page_title="Gemini CRM Pro", layout="wide")
+st.set_page_config(page_title="Gemini CRM Sheets", layout="wide")
 
-# Banco de Dados
-conn = sqlite3.connect('crm_data.db', check_same_thread=False)
-c = conn.cursor()
+# Conexão com Google Sheets
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# Tabelas com estrutura para Suporte a Admin e Recuperação
-c.execute('''CREATE TABLE IF NOT EXISTS users 
-             (username TEXT, password TEXT, role TEXT, pergunta_seg TEXT, resposta_seg TEXT)''')
-c.execute('''CREATE TABLE IF NOT EXISTS leads 
-             (nome TEXT, empresa TEXT, status TEXT, historico TEXT, score INTEGER, valor REAL)''')
-conn.commit()
+def get_data(worksheet):
+    return conn.read(spreadsheet=st.secrets["gsheets_url"], worksheet=worksheet)
+
+def save_data(df, worksheet):
+    conn.update(spreadsheet=st.secrets["gsheets_url"], worksheet=worksheet, data=df)
 
 # --- FUNÇÕES DE SEGURANÇA ---
 def hash_pw(pw): return hashlib.sha256(str.encode(pw)).hexdigest()
 
-# Inserção Automática do Administrador Gustavo Meneses
-c.execute('SELECT * FROM users WHERE username=?', ("Gustavo Meneses",))
-if not c.fetchone():
-    c.execute('INSERT INTO users VALUES (?,?,?,?,?)', 
-              ("Gustavo Meneses", hash_pw("1234"), "admin", "Qual o nome da sua empresa?", hash_pw("CRM")))
-    conn.commit()
+# Inicializar Usuários (Garantir que Gustavo Admin existe)
+df_users = get_data("users")
+if "Gustavo Meneses" not in df_users['username'].values:
+    new_admin = pd.DataFrame([{
+        "username": "Gustavo Meneses", 
+        "password": hash_pw("1234"), 
+        "role": "admin", 
+        "pergunta_seg": "Qual o nome da sua empresa?", 
+        "resposta_seg": hash_pw("CRM")
+    }])
+    df_users = pd.concat([df_users, new_admin], ignore_index=True)
+    save_data(df_users, "users")
 
-# --- IA: AUTO-DESCOBERTA DE MODELO ---
+# --- IA: CONFIGURAÇÃO ---
 def chamar_ia(prompt_text):
-    try:
-        genai.configure(api_key=st.secrets["GEMINI_KEY"])
-        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        modelo_final = next((m for m in models if "gemini-1.5-flash" in m), models[0])
-        model = genai.GenerativeModel(modelo_final)
-        response = model.generate_content(prompt_text)
-        return response.text
-    except Exception as e:
-        raise Exception(f"Erro na IA: {str(e)}")
+    genai.configure(api_key=st.secrets["GEMINI_KEY"])
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    return model.generate_content(prompt_text).text
 
-# --- INTERFACE DE ACESSO (LOGIN / CADASTRO / RECUPERAÇÃO) ---
+# --- INTERFACE DE ACESSO ---
 if 'logado' not in st.session_state: st.session_state.logado = False
 
 if not st.session_state.logado:
-    st.title("🚀 CRM Inteligente - Acesso")
-    tab_login, tab_reg, tab_rec = st.tabs(["Entrar", "Novo Cadastro", "Recuperar Senha"])
+    st.title("🚀 CRM Google Sheets")
+    tab1, tab2, tab3 = st.tabs(["Entrar", "Novo Cadastro", "Recuperar"])
     
-    with tab_login:
-        u = st.text_input("Usuário", key="l_u")
-        p = st.text_input("Senha", type='password', key="l_p")
-        if st.button("Acessar Sistema"):
-            c.execute('SELECT password, role FROM users WHERE username=?', (u,))
-            user = c.fetchone()
-            if user and user[0] == hash_pw(p):
+    with tab1:
+        u = st.text_input("Usuário")
+        p = st.text_input("Senha", type='password')
+        if st.button("Acessar"):
+            user_row = df_users[df_users['username'] == u]
+            if not user_row.empty and user_row.iloc[0]['password'] == hash_pw(p):
                 st.session_state.logado = True
                 st.session_state.user_name = u
-                st.session_state.user_role = user[1]
+                st.session_state.user_role = user_row.iloc[0]['role']
                 st.rerun()
-            else: st.error("Usuário ou senha incorretos.")
+            else: st.error("Erro no login.")
 
-    with tab_reg:
-        st.subheader("Crie sua conta")
-        new_u = st.text_input("Defina seu Usuário")
-        new_p = st.text_input("Defina sua Senha", type='password')
-        
-        st.write("---")
-        st.write("🔒 **Configuração de Recuperação**")
-        perg_list = [
-            "Qual o nome do seu primeiro animal de estimação?",
-            "Qual a cidade onde seus pais se conheceram?",
-            "Qual o nome da sua primeira escola?",
-            "Qual sua comida favorita da infância?"
-        ]
-        chosen_perg = st.selectbox("Escolha uma pergunta de segurança", perg_list)
-        chosen_resp = st.text_input("Sua resposta secreta (não esqueça!)")
-        
-        # Apenas Gustavo ou outros Admins podem criar novos Admins
-        role_opt = ["user", "admin"] if new_u == "Gustavo Meneses" else ["user"]
-        chosen_role = st.selectbox("Nível de Acesso", role_opt)
-
-        if st.button("Finalizar Cadastro"):
-            if new_u and new_p and chosen_resp:
-                c.execute('INSERT INTO users VALUES (?,?,?,?,?)', 
-                          (new_u, hash_pw(new_p), chosen_role, chosen_perg, hash_pw(chosen_resp.lower().strip())))
-                conn.commit()
-                st.success("Cadastro realizado! Mude para a aba 'Entrar'.")
-            else: st.warning("Preencha todos os campos, incluindo a resposta de segurança.")
-
-    with tab_rec:
-        st.subheader("Redefinição de Senha")
-        u_rec = st.text_input("Digite seu usuário")
-        if u_rec:
-            c.execute('SELECT pergunta_seg, resposta_seg FROM users WHERE username=?', (u_rec,))
-            res_rec = c.fetchone()
-            if res_rec:
-                st.warning(f"Pergunta: {res_rec[0]}")
-                resp_tentativa = st.text_input("Sua resposta secreta")
-                nova_p_rec = st.text_input("Nova Senha", type="password")
-                if st.button("Atualizar Senha"):
-                    if hash_pw(resp_tentativa.lower().strip()) == res_rec[1]:
-                        c.execute('UPDATE users SET password=? WHERE username=?', (hash_pw(nova_p_rec), u_rec))
-                        conn.commit()
-                        st.success("Senha alterada! Já pode fazer login.")
-                    else: st.error("Resposta de segurança incorreta.")
-            else: st.error("Usuário não encontrado.")
+    with tab2:
+        new_u = st.text_input("Novo Usuário")
+        new_p = st.text_input("Senha ", type='password')
+        perg = st.selectbox("Pergunta", ["Cidade natal?", "Nome do pet?"])
+        resp = st.text_input("Resposta")
+        if st.button("Cadastrar"):
+            if new_u not in df_users['username'].values:
+                new_row = pd.DataFrame([{"username": new_u, "password": hash_pw(new_p), "role": "user", "pergunta_seg": perg, "resposta_seg": hash_pw(resp.lower())}])
+                save_data(pd.concat([df_users, new_row]), "users")
+                st.success("Cadastrado!")
+            else: st.error("Usuário já existe.")
 
 # --- SISTEMA PRINCIPAL ---
 else:
     st.sidebar.title(f"👤 {st.session_state.user_name}")
-    st.sidebar.info(f"Nível: {st.session_state.user_role.upper()}")
+    menu = st.sidebar.radio("Navegação", ["Dashboard", "Adicionar Lead (IA)", "Painel Admin"])
     
-    pages = ["Dashboard", "Adicionar Lead (IA)", "Editar Leads"]
-    if st.session_state.user_role == "admin":
-        pages.append("Painel Admin")
-    
-    menu = st.sidebar.radio("Navegação", pages)
-    
-    if st.sidebar.button("Encerrar Sessão"):
-        st.session_state.logado = False
-        st.rerun()
-
-    # --- 1. DASHBOARD COM GRÁFICOS ---
     if menu == "Dashboard":
-        st.header("📊 Inteligência de Dados")
-        df = pd.read_sql_query("SELECT * FROM leads", conn)
+        df_leads = get_data("leads")
+        st.header("📊 Leads na Nuvem")
+        st.dataframe(df_leads)
+        st.bar_chart(df_leads['status'].value_counts())
         
-        if not df.empty:
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Leads Totais", len(df))
-            m2.metric("Pipeline (R$)", f"{df['valor'].sum():,.2f}")
-            m3.metric("Conversão Média", f"{df['score'].mean():.0f}%")
+        csv = df_leads.to_csv(index=False).encode('utf-8')
+        st.download_button("Baixar CSV", csv, "leads.csv")
 
-            col_graf1, col_graf2 = st.columns(2)
-            with col_graf1:
-                st.write("**Status dos Leads**")
-                st.bar_chart(df['status'].value_counts())
-            with col_graf2:
-                st.write("**Potencial Financeiro por Empresa**")
-                st.line_chart(df.set_index('empresa')['valor'])
-
-            st.write("---")
-            st.dataframe(df, use_container_width=True)
-
-            # --- 2. EXPORTAÇÃO ---
-            st.subheader("📥 Exportação")
-            csv_data = df.to_csv(index=False).encode('utf-8')
-            st.download_button("Exportar para CSV (Excel)", csv_data, "relatorio_leads.csv", "text/csv")
-        else:
-            st.info("Ainda não existem leads para exibir gráficos.")
-
-    # --- ADICIONAR LEAD (IA) ---
     elif menu == "Adicionar Lead (IA)":
-        st.header("🪄 Captura por Inteligência Artificial")
-        raw_text = st.text_area("Cole a conversa ou notas aqui:")
-        if st.button("Processar Dados"):
-            try:
-                prompt = f"Extraia em JSON: {{'nome','empresa','status','resumo_conversa','score','valor'}}. Texto: {raw_text}"
-                resp_ia = chamar_ia(prompt)
-                json_data = json.loads(resp_ia.replace('```json', '').replace('```', '').strip())
-                
-                c.execute('INSERT INTO leads VALUES (?,?,?,?,?,?)', 
-                          (json_data.get('nome',''), json_data.get('empresa',''), json_data.get('status',''), 
-                           json_data.get('resumo_conversa',''), json_data.get('score',0), json_data.get('valor',0)))
-                conn.commit()
-                st.success("Lead identificado e salvo!")
-            except Exception as e: st.error(f"Erro no processamento: {e}")
+        texto = st.text_area("Notas do lead:")
+        if st.button("Analisar"):
+            res = chamar_ia(f"Extraia JSON: {{'nome','empresa','status','historico','score','valor'}}. Texto: {texto}")
+            d = json.loads(res.replace('```json', '').replace('```', '').strip())
+            df_leads = get_data("leads")
+            save_data(pd.concat([df_leads, pd.DataFrame([d])]), "leads")
+            st.success("Salvo no Google Sheets!")
 
-    # --- 3. EDIÇÃO MANUAL ---
-    elif menu == "Editar Leads":
-        st.header("✏️ Gestão Manual")
-        df_edit = pd.read_sql_query("SELECT rowid, * FROM leads", conn)
-        if not df_edit.empty:
-            escolha = st.selectbox("Qual lead deseja alterar?", df_edit.index, 
-                                    format_func=lambda x: f"{df_edit.iloc[x]['nome']} - {df_edit.iloc[x]['empresa']}")
-            
-            with st.form("edit_form"):
-                new_st = st.selectbox("Alterar Status", ["Prospecção", "Reunião", "Proposta", "Fechado", "Perdido"], 
-                                      index=["Prospecção", "Reunião", "Proposta", "Fechado", "Perdido"].index(df_edit.iloc[escolha]['status']) if df_edit.iloc[escolha]['status'] in ["Prospecção", "Reunião", "Proposta", "Fechado", "Perdido"] else 0)
-                new_val = st.number_input("Valor Atualizado", value=float(df_edit.iloc[escolha]['valor']))
-                
-                if st.form_submit_button("Salvar Alterações"):
-                    c.execute('UPDATE leads SET status=?, valor=? WHERE rowid=?', 
-                              (new_st, new_val, int(df_edit.iloc[escolha]['rowid'])))
-                    conn.commit()
-                    st.success("Lead atualizado!")
-                    st.rerun()
-        else: st.warning("Nenhum lead para editar.")
-
-    # --- ADMINISTRAÇÃO DE USUÁRIOS ---
     elif menu == "Painel Admin" and st.session_state.user_role == "admin":
-        st.header("🔐 Controle de Acessos e Segurança")
-        
-        # Lista de usuários para visualização
-        df_users = pd.read_sql_query("SELECT username, role FROM users", conn)
-        st.subheader("Usuários Cadastrados")
-        st.table(df_users)
-        
-        st.write("---")
-        st.subheader("Gerenciar Usuário")
-        
-        # Seleção do usuário alvo
-        user_alvo = st.selectbox("Selecione o usuário para modificar:", df_users['username'])
-        
-        col_cargo, col_senha = st.columns(2)
-        
-        with col_cargo:
-            st.write("**Alterar Nível de Acesso**")
-            # Busca o cargo atual para já deixar selecionado
-            cargo_atual = df_users[df_users['username'] == user_alvo]['role'].values[0]
-            novo_cargo = st.selectbox("Novo Nível", ["user", "admin"], 
-                                      index=0 if cargo_atual == "user" else 1)
-            
-            if st.button("Atualizar Cargo"):
-                c.execute('UPDATE users SET role=? WHERE username=?', (novo_cargo, user_alvo))
-                conn.commit()
-                st.success(f"O cargo de {user_alvo} foi alterado para {novo_cargo}!")
-                st.rerun()
-
-        with col_senha:
-            st.write("**Redefinir Senha do Usuário**")
-            nova_senha_admin = st.text_input("Definir nova senha", type="password", 
-                                             help="O administrador pode forçar uma nova senha aqui.")
-            
-            if st.button("Forçar Nova Senha"):
-                if nova_senha_admin:
-                    c.execute('UPDATE users SET password=? WHERE username=?', 
-                              (hash_pw(nova_senha_admin), user_alvo))
-                    conn.commit()
-                    st.success(f"Senha de {user_alvo} redefinida com sucesso!")
-                else:
-                    st.warning("Digite uma senha para poder alterar.")
+        st.header("🔐 Admin")
+        df_users = get_data("users")
+        u_alvo = st.selectbox("Usuário", df_users['username'])
+        nova_s = st.text_input("Nova Senha Admin", type="password")
+        if st.button("Resetar Senha"):
+            df_users.loc[df_users['username'] == u_alvo, 'password'] = hash_pw(nova_s)
+            save_data(df_users, "users")
+            st.success("Senha alterada!")
