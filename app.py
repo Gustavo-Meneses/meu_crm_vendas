@@ -28,22 +28,23 @@ def hash_pw(pw):
 def chamar_ia(prompt_text):
     try:
         genai.configure(api_key=st.secrets["GEMINI_KEY"])
-        # Correção do modelo: Usamos 'gemini-1.5-flash' sem o prefixo 'models/' se necessário
+        # Mudança estratégica: Tentando o nome direto do modelo estável
         model = genai.GenerativeModel('gemini-1.5-flash')
         
-        # Prompt reforçado para evitar erros de formato
-        system_prompt = "Você é um assistente de CRM. Extraia os dados do texto e responda APENAS com um objeto JSON puro, sem marcações de markdown ou blocos de código. "
-        response = model.generate_content(system_prompt + prompt_text)
+        # Forçamos a IA a não usar blocos de código markdown (```json)
+        prompt_completo = f"Extraia os dados do texto abaixo e retorne APENAS um objeto JSON puro, sem textos extras ou formatação markdown. Campos: {{'nome','empresa','status','historico','score','valor'}}. Texto: {prompt_text}"
+        
+        response = model.generate_content(prompt_completo)
         return response.text
     except Exception as e:
-        return f"ERRO_IA: {str(e)}"
+        return f"ERRO_SISTEMA: {str(e)}"
 
 # --- INTERFACE DE ACESSO ---
 if 'logado' not in st.session_state:
     st.session_state.logado = False
 
 if not st.session_state.logado:
-    st.title("🚀 CRM Inteligente - Acesso")
+    st.title("🚀 CRM Inteligente - Login")
     u = st.text_input("Usuário")
     p = st.text_input("Senha", type='password')
     if st.button("Acessar"):
@@ -55,9 +56,8 @@ if not st.session_state.logado:
             st.rerun()
         else:
             st.error("Usuário ou senha incorretos.")
-
-# --- SISTEMA PRINCIPAL ---
 else:
+    # --- SISTEMA PRINCIPAL ---
     st.sidebar.title(f"👤 {st.session_state.user_name}")
     menu = st.sidebar.radio("Navegação", ["Dashboard", "Adicionar Lead (IA)"])
     
@@ -66,33 +66,40 @@ else:
         st.rerun()
 
     if menu == "Dashboard":
-        st.header("📊 Leads em Memória")
+        st.header("📊 Painel de Controle")
         if not st.session_state.df_leads.empty:
             st.dataframe(st.session_state.df_leads, use_container_width=True)
+            st.write("### Volume por Status")
             st.bar_chart(st.session_state.df_leads['status'].value_counts())
         else:
-            st.info("Sua lista de leads está vazia nesta sessão.")
+            st.info("Nenhum lead em memória. Use a aba 'Adicionar Lead' para começar.")
 
     elif menu == "Adicionar Lead (IA)":
-        st.header("🪄 Captura por IA")
-        txt = st.text_area("Notas do lead (Teste 1):")
-        if st.button("Processar com Gemini"):
-            with st.spinner("Analisando..."):
-                res = chamar_ia(f"Extraia para JSON: {{'nome','empresa','status','historico','score','valor'}}. Texto: {txt}")
-                
-                if "ERRO_IA" in res:
-                    st.error(f"Erro na comunicação com o Google: {res}")
-                else:
-                    try:
-                        # Limpa possíveis sujeiras de texto da IA
-                        json_clean = res.strip().replace('```json', '').replace('```', '')
-                        dados = json.loads(json_clean)
-                        
-                        # Converte para DataFrame e adiciona
-                        novo_lead = pd.DataFrame([dados])
-                        st.session_state.df_leads = pd.concat([st.session_state.df_leads, novo_lead], ignore_index=True)
-                        st.success("Lead identificado e adicionado com sucesso!")
-                        st.balloons()
-                    except Exception as e:
-                        st.error("A IA respondeu, mas o formato não foi reconhecido. Tente simplificar o texto.")
-                        st.code(res) # Mostra o que a IA mandou para debug
+        st.header("🪄 Captura de Lead via IA")
+        txt = st.text_area("Cole aqui as notas ou conversa do lead:", height=150)
+        
+        if st.button("Processar e Salvar"):
+            if txt:
+                with st.spinner("A IA está analisando os dados..."):
+                    res = chamar_ia(txt)
+                    
+                    if "ERRO_SISTEMA" in res:
+                        st.error(f"Erro na API do Google: {res}")
+                    else:
+                        try:
+                            # Limpeza de possíveis formatações markdown extras
+                            json_limpo = res.replace('```json', '').replace('```', '').strip()
+                            dados = json.loads(json_limpo)
+                            
+                            # Adiciona ao banco de dados em memória
+                            novo_df = pd.DataFrame([dados])
+                            st.session_state.df_leads = pd.concat([st.session_state.df_leads, novo_df], ignore_index=True)
+                            
+                            st.success("Lead processado e salvo com sucesso!")
+                            st.balloons()
+                        except Exception as e:
+                            st.error("A IA retornou os dados, mas não conseguimos processar o formato.")
+                            st.text("Resposta da IA:")
+                            st.code(res)
+            else:
+                st.warning("Por favor, insira algum texto antes de processar.")
