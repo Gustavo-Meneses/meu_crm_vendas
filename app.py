@@ -191,14 +191,45 @@ else:
         else: st.warning("Nenhum lead para editar.")
 
     # --- ADMINISTRAÇÃO DE USUÁRIOS ---
-    elif menu == "Painel Admin":
-        st.header("🔐 Controle de Acessos")
+    elif menu == "Painel Admin" and st.session_state.user_role == "admin":
+        st.header("🔐 Controle de Acessos e Segurança")
+        
+        # Lista de usuários para visualização
         df_users = pd.read_sql_query("SELECT username, role FROM users", conn)
+        st.subheader("Usuários Cadastrados")
         st.table(df_users)
         
-        user_alvo = st.selectbox("Mudar cargo de:", df_users['username'])
-        novo_cargo = st.selectbox("Novo Nível", ["user", "admin"])
-        if st.button("Atualizar Cargo"):
-            c.execute('UPDATE users SET role=? WHERE username=?', (novo_cargo, user_alvo))
-            conn.commit()
-            st.success(f"O usuário {user_alvo} agora é {novo_cargo}!")
+        st.write("---")
+        st.subheader("Gerenciar Usuário")
+        
+        # Seleção do usuário alvo
+        user_alvo = st.selectbox("Selecione o usuário para modificar:", df_users['username'])
+        
+        col_cargo, col_senha = st.columns(2)
+        
+        with col_cargo:
+            st.write("**Alterar Nível de Acesso**")
+            # Busca o cargo atual para já deixar selecionado
+            cargo_atual = df_users[df_users['username'] == user_alvo]['role'].values[0]
+            novo_cargo = st.selectbox("Novo Nível", ["user", "admin"], 
+                                      index=0 if cargo_atual == "user" else 1)
+            
+            if st.button("Atualizar Cargo"):
+                c.execute('UPDATE users SET role=? WHERE username=?', (novo_cargo, user_alvo))
+                conn.commit()
+                st.success(f"O cargo de {user_alvo} foi alterado para {novo_cargo}!")
+                st.rerun()
+
+        with col_senha:
+            st.write("**Redefinir Senha do Usuário**")
+            nova_senha_admin = st.text_input("Definir nova senha", type="password", 
+                                             help="O administrador pode forçar uma nova senha aqui.")
+            
+            if st.button("Forçar Nova Senha"):
+                if nova_senha_admin:
+                    c.execute('UPDATE users SET password=? WHERE username=?', 
+                              (hash_pw(nova_senha_admin), user_alvo))
+                    conn.commit()
+                    st.success(f"Senha de {user_alvo} redefinida com sucesso!")
+                else:
+                    st.warning("Digite uma senha para poder alterar.")
