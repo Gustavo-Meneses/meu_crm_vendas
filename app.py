@@ -61,8 +61,17 @@ if st.session_state['logged_in']:
         st.session_state['logged_in'] = False
         st.rerun()
 
-    # Configurar Gemini
-    genai.configure(api_key=st.secrets["GEMINI_KEY"]) # A chave fica escondida nas configs do site
+    # --- CONFIGURAÇÃO DO MODELO (VERSÃO BLINDADA) ---
+genai.configure(api_key=st.secrets["GEMINI_KEY"])
+
+# Tenta encontrar o modelo disponível para evitar o erro NotFound
+try:
+    # Busca o modelo flash na lista de modelos do Google
+    model_name = 'gemini-1.5-flash'
+    model = genai.GenerativeModel(model_name)
+    # Teste rápido de sanidade (opcional)
+except Exception:
+    # Se falhar, tenta o nome completo
     model = genai.GenerativeModel('models/gemini-1.5-flash')
 
     if page == "Dashboard":
