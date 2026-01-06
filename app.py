@@ -8,14 +8,29 @@ import json
 # --- CONFIGURAÇÃO INICIAL ---
 st.set_page_config(page_title="Gemini CRM Sheets", layout="wide")
 
-# Conexão com Google Sheets
-conn = st.connection("gsheets", type=GSheetsConnection)
+# Conexão com Google Sheets com tratamento de erro
+try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+except Exception as e:
+    st.error("Erro ao estabelecer conexão com o Google Sheets. Verifique os Secrets.")
+    st.stop()
 
-def get_data(worksheet):
-    return conn.read(spreadsheet=st.secrets["gsheets_url"], worksheet=worksheet)
+def get_data(worksheet_name):
+    try:
+        # Tentativa de leitura robusta
+        return conn.read(
+            spreadsheet=st.secrets["gsheets_url"], 
+            worksheet=worksheet_name,
+            ttl="0" # Força a atualização dos dados sem cache
+        )
+    except Exception as e:
+        st.error(f"Erro ao ler a aba '{worksheet_name}': Verifique se o nome da aba na planilha está correto e se o acesso é público.")
+        # Retorna um DataFrame vazio com as colunas necessárias para não travar o sistema
+        if worksheet_name == "users":
+            return pd.DataFrame(columns=["username", "password", "role", "pergunta_seg", "resposta_seg"])
+        else:
+            return pd.DataFrame(columns=["nome", "empresa", "status", "historico", "score", "valor"])
 
-def save_data(df, worksheet):
-    conn.update(spreadsheet=st.secrets["gsheets_url"], worksheet=worksheet, data=df)
 
 # --- FUNÇÕES DE SEGURANÇA ---
 def hash_pw(pw): return hashlib.sha256(str.encode(pw)).hexdigest()
