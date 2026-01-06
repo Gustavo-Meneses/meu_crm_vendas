@@ -63,7 +63,7 @@ if st.session_state['logged_in']:
 
     # Configurar Gemini
     genai.configure(api_key=st.secrets["GEMINI_KEY"]) # A chave fica escondida nas configs do site
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('models/gemini-1.5-flash')
 
     if page == "Dashboard":
         st.header("📊 Painel de Vendas")
