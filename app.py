@@ -3,15 +3,16 @@ import pandas as pd
 import sqlite3
 import google.generativeai as genai
 import hashlib
+import json
 
 # --- CONFIGURAÇÃO INICIAL ---
 st.set_page_config(page_title="Gemini CRM Pro", layout="wide")
 
-# Conectar ao Banco (Agora persistente)
+# Conectar ao Banco de Dados
 conn = sqlite3.connect('crm_data.db', check_same_thread=False)
 c = conn.cursor()
 
-# Criar tabelas se não existirem
+# Criar tabelas
 c.execute('CREATE TABLE IF NOT EXISTS users (username TEXT, password TEXT)')
 c.execute('CREATE TABLE IF NOT EXISTS leads (nome TEXT, empresa TEXT, status TEXT, historico TEXT, score INTEGER, valor REAL)')
 conn.commit()
@@ -20,8 +21,7 @@ conn.commit()
 def make_hashes(password): return hashlib.sha256(str.encode(password)).hexdigest()
 
 def check_hashes(password, hashed_text):
-    if make_hashes(password) == hashed_text: return True
-    return False
+    return make_hashes(password) == hashed_text
 
 # --- INTERFACE DE LOGIN ---
 if 'logged_in' not in st.session_state:
@@ -53,7 +53,14 @@ if not st.session_state['logged_in']:
                 st.error("Usuário ou Senha incorretos")
 
 # --- APP PRINCIPAL (Após Login) ---
-if st.session_state['logged_in']:
+else:
+    # 1. Configuração do Gemini (Busca a chave no cofre do Secrets)
+    try:
+        genai.configure(api_key=st.secrets["GEMINI_KEY"])
+        model = genai.GenerativeModel('gemini-1.5-flash')
+    except Exception as e:
+        st.error("Erro na API Key. Verifique o campo Secrets no Streamlit.")
+
     st.sidebar.title("Navegação")
     page = st.sidebar.radio("Ir para:", ["Dashboard", "Adicionar Lead (IA)", "Chat com CRM"])
     
@@ -61,58 +68,53 @@ if st.session_state['logged_in']:
         st.session_state['logged_in'] = False
         st.rerun()
 
-    # --- CONFIGURAÇÃO DO MODELO (DEBUG MODE) ---
-genai.configure(api_key=st.secrets["AIzaSyBlTfOtr6rZ9ycHuR5Ebk4uM-gmyGNbPAU"])
-
-def get_model():
-    try:
-        # Tenta listar os modelos para ver o que está disponível na sua conta/região
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    if page == "Dashboard":
+        st.header("📊 Painel de Vendas")
+        df = pd.read_sql_query("SELECT * FROM leads", conn)
         
-        # Prioridade 1: Nome com prefixo (mais estável em servidores cloud)
-        if 'models/gemini-1.5-flash' in available_models:
-            return genai.GenerativeModel('models/gemini-1.5-flash')
-        
-        # Prioridade 2: Nome simples
-        elif 'gemini-1.5-flash' in available_models:
-            return genai.GenerativeModel('gemini-1.5-flash')
-        
-        # Se não achou o flash, pega o primeiro disponível que seja Gemini
-        elif available_models:
-            return genai.GenerativeModel(available_models[0])
-            
+        if not df.empty:
+            st.dataframe(df, use_container_width=True)
+            total = df['valor'].sum()
+            st.metric("Faturamento em Pipeline", f"R$ {total:,.2f}")
         else:
-            raise Exception("Nenhum modelo de geração de conteúdo encontrado para esta chave.")
-    except Exception as e:
-        st.error(f"Erro na verificação de modelos: {e}")
-        # Fallback manual caso a listagem falhe
-        return genai.GenerativeModel('models/gemini-1.5-flash')
-
-model = get_model()
-        
-        # Resumo Financeiro
-        total = df['valor'].sum()
-        st.metric("Faturamento em Pipeline", f"R$ {total:,.2f}")
+            st.info("Nenhum lead cadastrado ainda.")
 
     elif page == "Adicionar Lead (IA)":
         st.header("✍️ Entrada Inteligente")
-        texto_bruto = st.text_area("Cole aqui a conversa ou nota de reunião:")
+        texto_bruto = st.text_area("Descreva a interação (Ex: Falei com Marcos da empresa X, valor 5000...)")
         
         if st.button("Processar com Gemini"):
-            prompt = f"Extraia nome, empresa, status (Prospecção, Reunião, Proposta, Fechado), resumo_conversa, score (0-100) e valor numérico do texto: {texto_bruto}. Responda APENAS JSON."
-            response = model.generate_content(prompt)
-            import json
-            dados = json.loads(response.text.replace('```json', '').replace('```', ''))
-            
-            c.execute('INSERT INTO leads VALUES (?,?,?,?,?,?)', 
-                      (dados['nome'], dados['empresa'], dados['status'], dados['resumo_conversa'], dados['score'], dados['valor']))
-            conn.commit()
-            st.success(f"Lead {dados['nome']} adicionado!")
+            if texto_bruto:
+                try:
+                    prompt = f"""Extraia nome, empresa, status (Prospecção, Reunião, Proposta, Fechado), 
+                    resumo_conversa, score (0-100) e valor numérico do texto abaixo. 
+                    Responda APENAS um JSON puro. Texto: {texto_bruto}"""
+                    
+                    response = model.generate_content(prompt)
+                    # Limpeza de resposta para garantir JSON puro
+                    texto_limpo = response.text.replace('```json', '').replace('```', '').strip()
+                    dados = json.loads(texto_limpo)
+                    
+                    c.execute('INSERT INTO leads VALUES (?,?,?,?,?,?)', 
+                              (dados.get('nome', 'N/A'), dados.get('empresa', 'N/A'), 
+                               dados.get('status', 'Prospecção'), dados.get('resumo_conversa', ''), 
+                               dados.get('score', 0), dados.get('valor', 0)))
+                    conn.commit()
+                    st.success(f"Lead {dados.get('nome')} adicionado com sucesso!")
+                except Exception as e:
+                    st.error(f"Erro ao processar com IA: {e}")
+            else:
+                st.warning("Por favor, digite algum texto.")
 
     elif page == "Chat com CRM":
         st.header("🤖 Pergunte ao seu CRM")
-        pergunta = st.text_input("O que você quer saber?")
+        df = pd.read_sql_query("SELECT * FROM leads", conn)
+        pergunta = st.text_input("Ex: Qual meu lead com maior valor?")
+        
         if pergunta:
-            df = pd.read_sql_query("SELECT * FROM leads", conn)
-            response = model.generate_content(f"Dados: {df.to_string()}. Pergunta: {pergunta}")
-            st.write(response.text)
+            if not df.empty:
+                contexto = f"Dados atuais do CRM: {df.to_string()}. Pergunta: {pergunta}"
+                response = model.generate_content(contexto)
+                st.write(response.text)
+            else:
+                st.warning("O banco de dados está vazio.")
