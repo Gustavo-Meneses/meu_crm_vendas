@@ -15,29 +15,25 @@ c.execute('CREATE TABLE IF NOT EXISTS users (username TEXT, password TEXT)')
 c.execute('CREATE TABLE IF NOT EXISTS leads (nome TEXT, empresa TEXT, status TEXT, historico TEXT, score INTEGER, valor REAL)')
 conn.commit()
 
-# --- FUNÇÃO DE IA REVISADA ---
+# --- FUNÇÃO DE IA REVISADA (FORÇANDO VERSÃO ESTÁVEL) ---
 def processar_com_ia(prompt_text):
     try:
-        # Pega a chave dos Secrets
+        # Configura a chave
         api_key = st.secrets["GEMINI_KEY"]
         genai.configure(api_key=api_key)
         
-        # Tentamos usar o modelo estável mais recente
-        # Se gemini-1.5-flash falhar, o código tentará o gemini-pro automaticamente
-        modelos_para_testar = ['gemini-1.5-flash', 'gemini-1.5-pro']
-        
-        for nome_modelo in modelos_para_testar:
-            try:
-                model = genai.GenerativeModel(nome_modelo)
-                response = model.generate_content(prompt_text)
-                return response.text
-            except Exception:
-                continue
-        
-        raise Exception("Nenhum modelo (Flash ou Pro) respondeu nesta região.")
+        # Tentamos usar o modelo com o nome que a versão estável reconhece
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(prompt_text)
+        return response.text
         
     except Exception as e:
-        raise Exception(f"Falha na comunicação: {str(e)}")
+        # Se falhar, tentamos listar os modelos para o log (ajuda no debug)
+        try:
+            models = [m.name for m in genai.list_models()]
+            raise Exception(f"Erro 404. Modelos disponíveis na sua chave: {models}")
+        except:
+            raise Exception(f"Falha total na comunicação: {str(e)}")
 
 # --- FUNÇÕES DE SEGURANÇA ---
 def make_hashes(password): return hashlib.sha256(str.encode(password)).hexdigest()
@@ -66,6 +62,7 @@ if not st.session_state['logged_in']:
             data = c.fetchone()
             if data and check_hashes(p, data[0]):
                 st.session_state['logged_in'] = True
+                st.session_state['user'] = u
                 st.rerun()
             else:
                 st.error("Usuário ou Senha incorretos")
@@ -85,10 +82,10 @@ else:
         texto = st.text_area("Descreva o lead ou a reunião:")
         if st.button("Analisar com Gemini"):
             try:
-                prompt = f"Retorne APENAS um JSON: {{'nome': '...', 'empresa': '...', 'status': '...', 'resumo_conversa': '...', 'score': 0, 'valor': 0}}. Texto: {texto}"
+                prompt = f"Retorne APENAS um JSON puro (sem markdown): {{'nome': '...', 'empresa': '...', 'status': '...', 'resumo_conversa': '...', 'score': 0, 'valor': 0}}. Texto: {texto}"
                 res = processar_com_ia(prompt)
                 
-                # Limpeza de resposta
+                # Limpeza de resposta para garantir JSON puro
                 json_str = res.replace('```json', '').replace('```', '').strip()
                 d = json.loads(json_str)
                 
