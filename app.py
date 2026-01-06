@@ -61,23 +61,34 @@ if st.session_state['logged_in']:
         st.session_state['logged_in'] = False
         st.rerun()
 
-    # --- CONFIGURAÇÃO DO MODELO (VERSÃO BLINDADA) ---
+    # --- CONFIGURAÇÃO DO MODELO (DEBUG MODE) ---
 genai.configure(api_key=st.secrets["GEMINI_KEY"])
 
-# Tenta encontrar o modelo disponível para evitar o erro NotFound
-try:
-    # Busca o modelo flash na lista de modelos do Google
-    model_name = 'gemini-1.5-flash'
-    model = genai.GenerativeModel(model_name)
-    # Teste rápido de sanidade (opcional)
-except Exception:
-    # Se falhar, tenta o nome completo
-    model = genai.GenerativeModel('models/gemini-1.5-flash')
+def get_model():
+    try:
+        # Tenta listar os modelos para ver o que está disponível na sua conta/região
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # Prioridade 1: Nome com prefixo (mais estável em servidores cloud)
+        if 'models/gemini-1.5-flash' in available_models:
+            return genai.GenerativeModel('models/gemini-1.5-flash')
+        
+        # Prioridade 2: Nome simples
+        elif 'gemini-1.5-flash' in available_models:
+            return genai.GenerativeModel('gemini-1.5-flash')
+        
+        # Se não achou o flash, pega o primeiro disponível que seja Gemini
+        elif available_models:
+            return genai.GenerativeModel(available_models[0])
+            
+        else:
+            raise Exception("Nenhum modelo de geração de conteúdo encontrado para esta chave.")
+    except Exception as e:
+        st.error(f"Erro na verificação de modelos: {e}")
+        # Fallback manual caso a listagem falhe
+        return genai.GenerativeModel('models/gemini-1.5-flash')
 
-    if page == "Dashboard":
-        st.header("📊 Painel de Vendas")
-        df = pd.read_sql_query("SELECT * FROM leads", conn)
-        st.dataframe(df, use_container_width=True)
+model = get_model()
         
         # Resumo Financeiro
         total = df['valor'].sum()
