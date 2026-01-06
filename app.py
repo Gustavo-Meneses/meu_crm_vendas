@@ -14,25 +14,35 @@ c.execute('CREATE TABLE IF NOT EXISTS users (username TEXT, password TEXT)')
 c.execute('CREATE TABLE IF NOT EXISTS leads (nome TEXT, empresa TEXT, status TEXT, historico TEXT, score INTEGER, valor REAL)')
 conn.commit()
 
-# --- FUNÇÃO DE IA BLINDADA ---
+# --- FUNÇÃO DE IA COM AUTO-DESCOBERTA ---
 def safe_generate_content(prompt_text):
-    """Tenta chamar o modelo usando diferentes padrões de nome para evitar o erro 404"""
     genai.configure(api_key=st.secrets["GEMINI_KEY"])
     
-    # Lista de tentativas de nomes de modelos (do mais comum ao mais específico)
-    tentativas = ['gemini-1.5-flash', 'models/gemini-1.5-flash']
-    
-    last_error = None
-    for model_name in tentativas:
-        try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt_text)
-            return response.text
-        except Exception as e:
-            last_error = e
-            continue
-    
-    raise Exception(f"Não foi possível conectar ao Gemini. Erro final: {last_error}")
+    # 1. Tentar descobrir quais modelos estão disponíveis para você
+    try:
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # Priorizar o flash se ele aparecer na lista
+        selected_model = None
+        for m in available_models:
+            if 'gemini-1.5-flash' in m:
+                selected_model = m
+                break
+        
+        # Se não achou o flash nominalmente, pega o primeiro da lista
+        if not selected_model and available_models:
+            selected_model = available_models[0]
+            
+        if not selected_model:
+            raise Exception("Nenhum modelo compatível encontrado na sua conta.")
+
+        # 2. Executar a chamada com o modelo descoberto
+        model = genai.GenerativeModel(selected_model)
+        response = model.generate_content(prompt_text)
+        return response.text
+
+    except Exception as e:
+        raise Exception(f"Erro na API do Google: {e}")
 
 # --- FUNÇÕES DE SEGURANÇA ---
 def make_hashes(password): return hashlib.sha256(str.encode(password)).hexdigest()
@@ -87,7 +97,8 @@ else:
         texto = st.text_area("Descreva o lead:")
         if st.button("Processar com IA"):
             try:
-                prompt = f"Retorne APENAS um JSON: {{'nome': '...', 'empresa': '...', 'status': '...', 'resumo_conversa': '...', 'score': 0, 'valor': 0}}. Texto: {texto}"
+                # Prompt mais rígido para evitar textos extras
+                prompt = f"Gere APENAS um JSON plano com estas chaves: nome, empresa, status, resumo_conversa, score, valor. Baseado nisto: {texto}"
                 resultado = safe_generate_content(prompt)
                 
                 # Limpa e converte JSON
@@ -97,14 +108,17 @@ else:
                 c.execute('INSERT INTO leads VALUES (?,?,?,?,?,?)', 
                           (d.get('nome',''), d.get('empresa',''), d.get('status',''), d.get('resumo_conversa',''), d.get('score',0), d.get('valor',0)))
                 conn.commit()
-                st.success("Lead salvo!")
+                st.success("Lead salvo com sucesso!")
             except Exception as e:
-                st.error(f"Erro: {e}")
+                st.error(f"Erro detalhado: {e}")
 
     elif page == "Chat com CRM":
         st.header("🤖 Chat com Dados")
         pergunta = st.text_input("Pergunta:")
         if pergunta:
-            df = pd.read_sql_query("SELECT * FROM leads", conn)
-            resp = safe_generate_content(f"Dados: {df.to_string()}. Pergunta: {pergunta}")
-            st.write(resp)
+            try:
+                df = pd.read_sql_query("SELECT * FROM leads", conn)
+                resp = safe_generate_content(f"Dados: {df.to_string()}. Pergunta: {pergunta}")
+                st.write(resp)
+            except Exception as e:
+                st.error(f"Erro no Chat: {e}")
