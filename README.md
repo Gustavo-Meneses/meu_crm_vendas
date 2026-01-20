@@ -1,31 +1,43 @@
-# 🚀 Gemini CRM Pro - Inteligência Comercial
+# 🚀 AI CRM Pro - Inteligência Comercial com Mistral AI
 
-Este é um sistema de CRM (Customer Relationship Management) inteligente desenvolvido com **Python** e **Streamlit**, utilizando a API do **Google Gemini 1.5 Flash** para automatizar a captura e estruturação de leads a partir de textos informais.
+Este é um sistema de CRM (Customer Relationship Management) inteligente e ultraveloz, desenvolvido com **Python** e **Streamlit**. O projeto utiliza o modelo **Mistral Small** para extrair dados estruturados de textos informais, automatizando a entrada de leads com alta precisão.
 
-## 🌟 Funcionalidades
-
-- **Captura Inteligente (IA):** Transforma conversas de WhatsApp, e-mails ou anotações de reuniões em dados estruturados (JSON) automaticamente.
-- **Dashboard de Vendas:** Visualização métrica do pipeline de vendas, valor total em negociação e distribuição de status dos leads.
-- **Segurança:** Sistema de login com criptografia de senhas (SHA-256).
-- **Modo de Memória:** Execução rápida e leve utilizando `session_state`, ideal para demonstrações e testes rápidos sem dependência de bancos de dados externos.
+## 🌟 Diferenciais desta Versão
+- **Motor Mistral AI:** Migração para a API da Mistral AI, garantindo 100% de estabilidade e tempo de resposta reduzido.
+- **Extração JSON Nativa:** Utiliza o modo de resposta estruturada da Mistral para garantir que os dados do lead sejam sempre válidos.
+- **Modo de Memória Otimizado:** Gestão de dados via `session_state`, permitindo testes rápidos sem necessidade de configuração de banco de dados complexos.
+- **Segurança:** Sistema de login integrado para proteção do painel de vendas.
 
 ## 🛠️ Tecnologias Utilizadas
+- [Python](https://www.python.org/) - Linguagem principal.
+- [Streamlit](https://streamlit.io/) - Interface do usuário.
+- [Mistral AI SDK](https://docs.mistral.ai/) - Inteligência Artificial para processamento de linguagem natural.
+- [Pandas](https://pandas.pydata.org/) - Estruturação e visualização de dados.
 
-- [Python](https://www.python.org/) - Linguagem base.
-- [Streamlit](https://streamlit.io/) - Framework para a interface web.
-- [Google Generative AI](https://ai.google.dev/) - Modelo Gemini 1.5 Flash para processamento de linguagem natural.
-- [Pandas](https://pandas.pydata.org/) - Manipulação e análise de dados.
+## 🚀 Como Instalar e Rodar
 
-## 🚀 Como Executar o Projeto
+### 1. Requisitos
+Certifique-se de ter o Python 3.9+ instalado.
 
-### Pré-requisitos
+### 2. Instalação de Dependências
+No terminal, execute:
+```bash
+pip install streamlit pandas mistralai
 
-1. Possuir o Python instalado.
-2. Obter uma chave de API do Google Gemini no [Google AI Studio](https://aistudio.google.com/).
+3. Configuração de Chaves (Secrets)
+Crie um arquivo em .streamlit/secrets.toml (local) ou configure no painel do Streamlit Cloud:
+MISTRAL_API_KEY = "SUA_CHAVE_AQUI"
 
-### Instalação
+4. Executando o App
+streamlit run app.py
 
-1. Clone o repositório:
-   ```bash
-   git clone [https://github.com/seu-usuario/seu-repositorio.git](https://github.com/seu-usuario/seu-repositorio.git)
-   cd seu-repositorio
+📊 Estrutura do Sistema
+ * Login: Acesso restrito (Padrão: Gustavo Meneses / 1234).
+ * Dashboard: Visão geral do pipeline, métricas de valor total e volume de leads.
+ * Captura IA: Área para colar e-mails ou conversas. A Mistral extrai automaticamente: Nome, Empresa, Status, Histórico, Score e Valor.
+ * Exportação: Botão para baixar todos os leads da sessão em formato CSV.
+📝 Nota sobre Persistência de Dados
+Esta versão opera em Modo de Memória (Ephemeral). Isso significa que os dados residem na sessão do navegador. Para salvar permanentemente seus leads de teste, utilize o botão "Exportar CSV" disponível no Dashboard antes de encerrar a sessão.
+Desenvolvido para transformar textos informais em oportunidades reais de negócio. 📈
+
+
