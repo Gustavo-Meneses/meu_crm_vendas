@@ -21,7 +21,7 @@ Certifique-se de ter o Python 3.9+ instalado.
 
 ### 2. Instalação de Dependências
 No terminal, execute:
-```bash
+
 pip install streamlit pandas mistralai
 
 3. Configuração de Chaves (Secrets)
