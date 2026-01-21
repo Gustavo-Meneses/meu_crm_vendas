@@ -1,4 +1,4 @@
-```markdown
+
 # 🏢 AI CRM Pro - Gestão Comercial Inteligente
 
 Plataforma corporativa de CRM desenvolvida com **Python** e **Streamlit**, integrada à API da **Mistral AI** para automação de entrada de dados e gestão estratégica de leads.
