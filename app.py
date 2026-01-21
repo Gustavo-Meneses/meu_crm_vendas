@@ -22,7 +22,7 @@ def processar_com_mistral(texto_entrada):
         
         client = Mistral(api_key=api_key)
         
-        # Modelo mistral-small é ótimo para tarefas de extração
+        # Modelo estável para extração de JSON
         model = "mistral-small-latest"
         
         prompt_sistema = (
@@ -38,84 +38,84 @@ def processar_com_mistral(texto_entrada):
                 {"role": "system", "content": prompt_sistema},
                 {"role": "user", "content": f"Extraia os dados deste lead: {texto_entrada}"}
             ],
-            response_format={"type": "json_object"} # Garante o formato JSON
+            response_format={"type": "json_object"}
         )
         
         return response.choices[0].message.content
     except Exception as e:
         return f"ERRO_API: {str(e)}"
 
-# --- INTERFACE DE LOGIN ---
+# --- INTERFACE DE LOGIN (USUÁRIO ADM) ---
 if not st.session_state.logado:
-    st.title("🔐 Login CRM - Mistral Edition")
-    u = st.text_input("Usuário Admin")
+    st.title("🔐 Login CRM - Acesso Restrito")
+    u = st.text_input("Usuário")
     p = st.text_input("Senha", type="password")
     
     if st.button("Acessar Sistema"):
-        if u == "Gustavo Meneses" and p == "1234":
+        # Alterado para usuário 'ADM' conforme solicitado
+        if u == "ADM" and p == "1234":
             st.session_state.logado = True
             st.rerun()
         else:
-            st.error("Credenciais inválidas.")
+            st.error("Credenciais inválidas. Verifique usuário e senha.")
 
-# --- APP PRINCIPAL ---
+# --- APP PRINCIPAL (SISTEMA LOGADO) ---
 else:
-    st.sidebar.title(f"👤 Gustavo Meneses")
-    aba = st.sidebar.radio("Navegação", ["Dashboard", "Adicionar Lead (IA)"])
+    st.sidebar.title(f"👤 Painel ADM")
+    aba = st.sidebar.radio("Navegação", ["📊 Dashboard", "➕ Adicionar Lead (IA)"])
     
-    if st.sidebar.button("Sair"):
+    st.sidebar.markdown("---")
+    if st.sidebar.button("Sair do Sistema"):
         st.session_state.logado = False
         st.rerun()
 
-    if aba == "Dashboard":
+    if aba == "📊 Dashboard":
         st.header("📊 Funil de Leads")
         if not st.session_state.df_leads.empty:
-            # Métricas Básicas
+            # Métricas no topo
             total_leads = len(st.session_state.df_leads)
             valor_total = pd.to_numeric(st.session_state.df_leads['valor'], errors='coerce').sum()
             
             c1, c2 = st.columns(2)
             c1.metric("Leads Capturados", total_leads)
-            c2.metric("Volume em Propostas", f"R$ {valor_total:,.2f}")
+            c2.metric("Volume Financeiro", f"R$ {valor_total:,.2f}")
             
             st.divider()
             st.dataframe(st.session_state.df_leads, use_container_width=True)
             
-            # Download
+            # Exportação de segurança
             csv = st.session_state.df_leads.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Exportar para Excel (CSV)", csv, "leads_mistral.csv", "text/csv")
+            st.download_button("📥 Exportar Leads (CSV)", csv, "meus_leads_mistral.csv", "text/csv")
         else:
-            st.info("Nenhum lead em memória. Use a captura por IA.")
+            st.info("O pipeline está vazio. Utilize a aba de captura para registrar novos leads.")
 
-    elif aba == "Adicionar Lead (IA)":
-        st.header("⚡ Captura Inteligente com Mistral AI")
-        st.markdown("Cole abaixo o texto (e-mail, nota ou WhatsApp) para converter em lead.")
+    elif aba == "➕ Adicionar Lead (IA)":
+        st.header("⚡ Captura de Lead com Mistral AI")
+        st.markdown("Cole o texto bruto (e-mail, WhatsApp ou notas) para estruturar o lead.")
         
-        txt = st.text_area("Texto do Lead:", height=200, placeholder="Ex: Falei com o Carlos da empresa ABC...")
+        txt = st.text_area("Notas do Lead:", height=200, placeholder="Ex: O Carlos da ABC S.A. quer fechar um projeto de 10k...")
         
         if st.button("🚀 Processar com IA"):
             if txt:
-                with st.spinner("Mistral está analisando..."):
+                with st.spinner("Analisando com Mistral AI..."):
                     resultado = processar_com_mistral(txt)
                     
                     if "ERRO_API" in resultado:
-                        st.error(f"Erro na conexão com a Mistral: {resultado}")
+                        st.error(f"Erro: {resultado}")
                     else:
                         try:
-                            # Converte a resposta para dicionário Python
                             dados = json.loads(resultado)
-                            
-                            # Adiciona ao DataFrame da sessão
+                            # Salva no DataFrame da sessão
                             st.session_state.df_leads = pd.concat([
                                 st.session_state.df_leads, 
                                 pd.DataFrame([dados])
                             ], ignore_index=True)
                             
-                            st.success("Lead identificado e salvo na memória!")
+                            st.success("Lead identificado e adicionado ao Dashboard!")
                             st.balloons()
                             st.json(dados)
-                        except Exception as e:
-                            st.error("A IA respondeu, mas não conseguimos processar o JSON.")
+                        except Exception:
+                            st.error("A IA respondeu, mas os dados vieram em formato corrompido.")
                             st.code(resultado)
             else:
-                st.warning("Por favor, insira o texto antes de processar.")
+                st.warning("Por favor, preencha o campo de texto.")
