@@ -51,4 +51,3 @@ Este sistema utiliza **Session State** para armazenamento volátil de dados. Rec
 
 Solução desenvolvida para otimizar o fluxo de prospecção e vendas. 📈
 
-```
