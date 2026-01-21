@@ -52,14 +52,3 @@ Este sistema utiliza **Session State** para armazenamento volátil de dados. Rec
 Solução desenvolvida para otimizar o fluxo de prospecção e vendas. 📈
 
 ```
-
----
-
-**O que você deve fazer agora:**
-1. Atualize o `app.py` no GitHub.
-2. Atualize o `README.md` no GitHub.
-3. Como o título da aba do navegador também mudou para **"Gestão Comercial Inteligente"**, o app terá um aspecto muito mais sério e robusto.
-
-**Deseja que eu adicione um logo (uma imagem ou ícone maior) no centro da tela de login para finalizar o visual corporativo?**
-
-```
