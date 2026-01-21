@@ -65,5 +65,3 @@ Este sistema utiliza **Session State** para o armazenamento volátil de dados.
 ---
 
 Solução desenvolvida para otimizar o fluxo de prospecção e acelerar o fechamento de vendas. 📈
-
-```
