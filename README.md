@@ -1,37 +1,204 @@
-# 🚀 AI CRM Pro - Inteligência Comercial (Mistral AI Edition)
+Excelente escolha. Títulos corporativos transmitem mais credibilidade e profissionalismo ao projeto. Vamos usar **"Acesso ao Sistema de Gestão Comercial"**.
 
-Este é um sistema de CRM (Customer Relationship Management) inteligente desenvolvido com **Python** e **Streamlit**. O projeto utiliza a API da **Mistral AI** para processar textos informais (e-mails, conversas de WhatsApp, notas de reuniões) e transformá-los automaticamente em dados estruturados para gestão comercial.
+Aqui está o **código completo** atualizado com o novo título e mantendo a configuração do usuário **ADM**, seguido pelo **README** revisado.
 
-## 🌟 Principais Funcionalidades
+### 1. Código Completo (`app.py`)
 
-- **Captura Inteligente via IA:** Extração automática de Nome, Empresa, Valor, Status, Histórico e Score a partir de blocos de texto.
-- **Motor de Alta Estabilidade:** Utiliza o modelo `mistral-small-latest` com suporte nativo a JSON, eliminando erros de formatação.
-- **Dashboard Comercial:** Visualização métrica do pipeline de vendas e volume financeiro em negociação.
-- **Exportação de Dados:** Função para baixar a base de leads capturada em formato CSV para uso em Excel ou outras ferramentas.
-- **Acesso Restrito:** Sistema de login seguro para proteção dos dados da sessão.
+```python
+import streamlit as st
+import pandas as pd
+from mistralai import Mistral
+import json
 
-## 🛠️ Tecnologias Utilizadas
+# --- CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(page_title="Gestão Comercial Inteligente", layout="wide", page_icon="🏢")
 
-- [Python](https://www.python.org/) - Base do projeto.
-- [Streamlit](https://streamlit.io/) - Interface web dinâmica.
-- [Mistral AI SDK](https://docs.mistral.ai/) - Inteligência Artificial para extração de dados.
-- [Pandas](https://pandas.pydata.org/) - Manipulação e análise de tabelas.
+# --- INICIALIZAÇÃO DE DADOS EM MEMÓRIA ---
+if 'df_leads' not in st.session_state:
+    st.session_state.df_leads = pd.DataFrame(columns=["nome", "empresa", "status", "historico", "score", "valor"])
 
-## 🔑 Credenciais de Acesso
+if 'logado' not in st.session_state:
+    st.session_state.logado = False
 
-Para acessar o painel administrativo, utilize as seguintes credenciais padrão:
+# --- FUNÇÃO IA (MISTRAL AI) ---
+def processar_com_mistral(texto_entrada):
+    try:
+        api_key = st.secrets.get("MISTRAL_API_KEY")
+        if not api_key:
+            return "ERRO_CONFIG: Chave MISTRAL_API_KEY não encontrada nos Secrets."
+        
+        client = Mistral(api_key=api_key)
+        model = "mistral-small-latest"
+        
+        prompt_sistema = (
+            "Você é um analista de dados comerciais. Extraia do texto e retorne APENAS um JSON puro. "
+            "Campos: nome, empresa, status (Prospecção, Reunião, Proposta, Fechado, Perdido), "
+            "historico, score (0-100) e valor (numérico). "
+            "Não adicione comentários, apenas o JSON."
+        )
 
-* **Usuário:** `ADM`
-* **Senha:** `1234`
+        response = client.chat.complete(
+            model=model,
+            messages=[
+                {"role": "system", "content": prompt_sistema},
+                {"role": "user", "content": f"Extraia os dados deste lead: {texto_entrada}"}
+            ],
+            response_format={"type": "json_object"}
+        )
+        
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"ERRO_API: {str(e)}"
 
-## 🚀 Como Executar o Projeto
+# --- INTERFACE DE LOGIN CORPORATIVA ---
+if not st.session_state.logado:
+    st.markdown("<h2 style='text-align: center;'>Acesso ao Sistema de Gestão Comercial</h2>", unsafe_content_html=True)
+    st.markdown("<p style='text-align: center; color: gray;'>Insira suas credenciais para acessar o painel administrativo.</p>", unsafe_content_html=True)
+    
+    # Centralizando o formulário de login
+    _, col_login, _ = st.columns([1, 1, 1])
+    with col_login:
+        u = st.text_input("Usuário")
+        p = st.text_input("Senha", type="password")
+        
+        if st.button("Autenticar", use_container_width=True):
+            if u == "ADM" and p == "1234":
+                st.session_state.logado = True
+                st.rerun()
+            else:
+                st.error("Credenciais inválidas. Tente novamente.")
 
-### Pré-requisitos
-1. Possuir o Python 3.9 ou superior.
-2. Obter uma chave de API no [Mistral AI Console](https://console.mistral.ai/).
+# --- APP PRINCIPAL (SISTEMA LOGADO) ---
+else:
+    st.sidebar.title("🏢 Portal do Analista")
+    st.sidebar.markdown(f"**Usuário:** ADM")
+    
+    aba = st.sidebar.radio("Navegação Estratégica", ["📊 Dashboard de Vendas", "➕ Captura de Lead (IA)"])
+    
+    st.sidebar.markdown("---")
+    if st.sidebar.button("Encerrar Sessão"):
+        st.session_state.logado = False
+        st.rerun()
 
-### Instalação e Execução
-1. Clone este repositório:
+    # ABA: DASHBOARD
+    if aba == "📊 Dashboard de Vendas":
+        st.header("📊 Painel de Performance Comercial")
+        if not st.session_state.df_leads.empty:
+            total_leads = len(st.session_state.df_leads)
+            valor_total = pd.to_numeric(st.session_state.df_leads['valor'], errors='coerce').sum()
+            
+            c1, c2 = st.columns(2)
+            c1.metric("Volume de Leads", total_leads)
+            c2.metric("Pipeline Estimado", f"R$ {valor_total:,.2f}")
+            
+            st.divider()
+            st.subheader("Base de Prospecção Ativa")
+            st.dataframe(st.session_state.df_leads, use_container_width=True)
+            
+            csv = st.session_state.df_leads.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Exportar Relatório (CSV)", csv, "relatorio_leads.csv", "text/csv")
+        else:
+            st.info("Nenhum registro encontrado no pipeline atual.")
+
+    # ABA: CAPTURA IA
+    elif aba == "➕ Captura de Lead (IA)":
+        st.header("⚡ Extração Inteligente de Leads")
+        st.write("Utilize inteligência artificial para converter textos brutos em registros de CRM.")
+        
+        txt = st.text_area("Entrada de Dados (E-mail/WhatsApp/Notas):", height=200)
+        
+        if st.button("Processar Dados"):
+            if txt:
+                with st.spinner("O sistema está analisando as informações..."):
+                    resultado = processar_com_mistral(txt)
+                    
+                    if "ERRO_API" in resultado:
+                        st.error(f"Falha técnica: {resultado}")
+                    else:
+                        try:
+                            dados = json.loads(resultado)
+                            st.session_state.df_leads = pd.concat([
+                                st.session_state.df_leads, 
+                                pd.DataFrame([dados])
+                            ], ignore_index=True)
+                            
+                            st.success("Lead processado e registrado com sucesso!")
+                            st.json(dados)
+                            st.balloons()
+                        except Exception:
+                            st.error("Erro na estruturação dos dados.")
+            else:
+                st.warning("Campo obrigatório vazio.")
+
+```
+
+---
+
+### 2. README Atualizado (`README.md`)
+
+```markdown
+# 🏢 AI CRM Pro - Gestão Comercial Inteligente
+
+Plataforma corporativa de CRM desenvolvida com **Python** e **Streamlit**, integrada à API da **Mistral AI** para automação de entrada de dados e gestão estratégica de leads.
+
+## 🌟 Funcionalidades Principais
+- **Acesso Corporativo:** Interface de login profissional e restrita.
+- **Processamento de Linguagem Natural (LLM):** Extração automatizada de dados comerciais complexos a partir de textos informais.
+- **Painel de Performance (Dashboard):** Acompanhamento métrico de volume de leads e pipeline financeiro.
+- **Exportação Estruturada:** Geração de relatórios em CSV para integração com ferramentas de BI.
+
+## 🛠️ Stack Tecnológica
+- **Linguagem:** Python 3.9+
+- **Frontend:** Streamlit
+- **IA Engine:** Mistral AI (Model: mistral-small-latest)
+- **Data:** Pandas para processamento de DataFrames.
+
+## 🔐 Controle de Acesso
+O sistema utiliza autenticação administrativa padrão para a sessão:
+- **Usuário:** `ADM`
+- **Senha:** `1234`
+
+## 🚀 Instalação e Configuração
+
+1. **Dependências:**
    ```bash
-   git clone [https://github.com/seu-usuario/seu-repositorio.git](https://github.com/seu-usuario/seu-repositorio.git)
-   cd seu-repositorio
+   pip install streamlit pandas mistralai
+
+```
+
+2. **Secrets do Streamlit:**
+Configure sua chave de API nos Secrets do Streamlit Cloud ou no arquivo local `.streamlit/secrets.toml`:
+```toml
+MISTRAL_API_KEY = "SUA_CHAVE_AQUI"
+
+```
+
+
+3. **Execução:**
+```bash
+streamlit run app.py
+
+```
+
+
+
+## 📝 Observações Técnicas
+
+Este sistema utiliza **Session State** para armazenamento volátil de dados. Recomendamos o uso da função **"Exportar Relatório (CSV)"** no Dashboard para garantir a persistência das informações fora do ambiente de execução.
+
+---
+
+Solução desenvolvida para otimizar o fluxo de prospecção e vendas. 📈
+
+```
+
+---
+
+**O que você deve fazer agora:**
+1. Atualize o `app.py` no GitHub.
+2. Atualize o `README.md` no GitHub.
+3. Como o título da aba do navegador também mudou para **"Gestão Comercial Inteligente"**, o app terá um aspecto muito mais sério e robusto.
+
+**Deseja que eu adicione um logo (uma imagem ou ícone maior) no centro da tela de login para finalizar o visual corporativo?**
+
+```
