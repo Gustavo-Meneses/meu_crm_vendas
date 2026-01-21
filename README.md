@@ -31,13 +31,14 @@ O sistema utiliza autenticação administrativa para proteção do ambiente de d
 Instale as bibliotecas necessárias via terminal:
 ```bash
 pip install streamlit pandas mistralai
-2. Chave de API (Secrets)
+
+### 2. Chave de API (Secrets)
 Obtenha sua chave no Mistral AI Console e configure-a nos Secrets do Streamlit Cloud ou no arquivo local .streamlit/secrets.toml:
 
 Ini, TOML
 
 MISTRAL_API_KEY = "SUA_CHAVE_AQUI"
-3. Execução
+### 3. Execução
 Para rodar o projeto localmente:
 
 Bash
