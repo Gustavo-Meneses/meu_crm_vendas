@@ -46,7 +46,7 @@ O cliente da Empresa B recusou a oferta de 2.000.
 Status: Perdido.
 O sistema identificará automaticamente os blocos 101 e 102 e fará a análise separada.
 
-🚀 Instalação e Configuração
+## 🚀 Instalação e Configuração
 1. Dependências
 No terminal, instale as bibliotecas necessárias:
 
@@ -60,11 +60,11 @@ MISTRAL_API_KEY = "SUA_CHAVE_DA_MISTRAL_AQUI"
 3. Executando o Projeto
 Bash
 streamlit run app.py
-⚠️ Nota sobre Persistência
+## ⚠️ Nota sobre Persistência
 Este sistema opera com Session State (memória volátil).
 
 Os dados permanecem salvos enquanto a aba do navegador estiver aberta.
 
 Para salvar seu trabalho permanentemente, utilize sempre o botão "📥 Exportar CSV" disponível no Dashboard antes de fechar o sistema.
 
-Desenvolvido para automatizar a inteligência comercial e eliminar o trabalho manual de preenchimento de CRM. 📈
+## Desenvolvido para automatizar a inteligência comercial e eliminar o trabalho manual de preenchimento de CRM. 📈
