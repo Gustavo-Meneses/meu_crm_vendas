@@ -44,6 +44,7 @@ Status: Proposta. Score: 90.
 ID do Cliente: 102
 O cliente da Empresa B recusou a oferta de 2.000.
 Status: Perdido.
+
 O sistema identificará automaticamente os blocos 101 e 102 e fará a análise separada.
 
 ## 🚀 Instalação e Configuração
