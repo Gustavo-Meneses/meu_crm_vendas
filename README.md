@@ -67,4 +67,4 @@ Os dados permanecem salvos enquanto a aba do navegador estiver aberta.
 
 Para salvar seu trabalho permanentemente, utilize sempre o botão "📥 Exportar CSV" disponível no Dashboard antes de fechar o sistema.
 
-## Desenvolvido para automatizar a inteligência comercial e eliminar o trabalho manual de preenchimento de CRM. 📈
+Desenvolvido para automatizar a inteligência comercial e eliminar o trabalho manual de preenchimento de CRM. 📈
