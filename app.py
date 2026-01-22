@@ -2,12 +2,12 @@ import streamlit as st
 import pandas as pd
 from mistralai import Mistral
 import json
+import re  # Importação necessária para fatiar o texto
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Gestão Comercial Inteligente", layout="wide", page_icon="🏢")
 
-# --- INICIALIZAÇÃO DO BANCO DE DADOS EM MEMÓRIA ---
-# Adicionada a coluna 'id' como identificador único
+# --- INICIALIZAÇÃO DE DADOS ---
 if 'df_leads' not in st.session_state:
     st.session_state.df_leads = pd.DataFrame(columns=["id", "nome", "empresa", "status", "historico", "score", "valor"])
 
@@ -49,15 +49,15 @@ def processar_com_mistral(texto_entrada):
 
 # --- INTERFACE DE ACESSO ---
 if not st.session_state.logado:
-    st.markdown("<h2 style='text-align: center;'>Acesso ao Sistema de Gestão Comercial</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>Portal de Gestão Comercial</h2>", unsafe_allow_html=True)
     
     tab_login, tab_cadastro = st.tabs(["🔐 Entrar", "📝 Criar Conta"])
     
     with tab_login:
         _, col_l, _ = st.columns([1, 1, 1])
         with col_l:
-            u_login = st.text_input("Usuário")
-            p_login = st.text_input("Senha", type="password")
+            u_login = st.text_input("Usuário", key="login_user")
+            p_login = st.text_input("Senha", type="password", key="login_pass")
             if st.button("Autenticar", use_container_width=True):
                 if u_login in st.session_state.usuarios_db and st.session_state.usuarios_db[u_login] == p_login:
                     st.session_state.logado = True
@@ -69,8 +69,8 @@ if not st.session_state.logado:
     with tab_cadastro:
         _, col_c, _ = st.columns([1, 1, 1])
         with col_c:
-            u_novo = st.text_input("Novo Usuário")
-            p_novo = st.text_input("Nova Senha", type="password")
+            u_novo = st.text_input("Novo Usuário", key="new_user")
+            p_novo = st.text_input("Nova Senha", type="password", key="new_pass")
             if st.button("Cadastrar", use_container_width=True):
                 if u_novo and p_novo:
                     st.session_state.usuarios_db[u_novo] = p_novo
@@ -82,13 +82,14 @@ if not st.session_state.logado:
 else:
     st.sidebar.title("🏢 Painel de Controle")
     st.sidebar.write(f"Usuário: **{st.session_state.usuario_atual}**")
-    menu = st.sidebar.radio("Navegação", ["📊 Dashboard Visual", "➕ Capturar/Atualizar Lead"])
+    
+    menu = st.sidebar.radio("Navegação", ["📊 Dashboard Visual", "➕ Capturar (Lote)"])
     
     if st.sidebar.button("Sair"):
         st.session_state.logado = False
         st.rerun()
 
-    # --- DASHBOARD ---
+    # --- ABA: DASHBOARD ---
     if menu == "📊 Dashboard Visual":
         st.header("📊 Inteligência de Vendas")
         
@@ -96,6 +97,13 @@ else:
             df = st.session_state.df_leads.copy()
             df['valor'] = pd.to_numeric(df['valor'], errors='coerce').fillna(0)
             df['score'] = pd.to_numeric(df['score'], errors='coerce').fillna(0)
+            
+            # Ordena por ID numérico se possível
+            try:
+                df['id_num'] = pd.to_numeric(df['id'])
+                df = df.sort_values('id_num')
+            except:
+                pass
 
             m1, m2, m3 = st.columns(3)
             m1.metric("Clientes Únicos", len(df))
@@ -105,56 +113,85 @@ else:
             st.divider()
             g1, g2 = st.columns(2)
             with g1:
-                st.subheader("🎯 Status por Cliente")
-                st.bar_chart(df['status'].value_counts())
+                st.subheader("🎯 Status do Funil")
+                st.bar_chart(df['status'].value_counts(), color="#2980B9")
             with g2:
-                st.subheader("💰 Volume por ID (Top 10)")
-                st.bar_chart(data=df.head(10), x='id', y='valor')
+                st.subheader("💰 Top 10 Oportunidades")
+                st.bar_chart(data=df.head(10), x='id', y='valor', color="#27AE60")
 
             st.divider()
-            st.subheader("📋 Base de Clientes")
-            st.dataframe(df, use_container_width=True)
+            st.subheader("📋 Base de Dados Consolidada")
+            st.dataframe(df.drop(columns=['id_num'], errors='ignore'), use_container_width=True)
             
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Exportar CSV", csv, "leads_id.csv", "text/csv")
+            csv = df.drop(columns=['id_num'], errors='ignore').to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Exportar CSV", csv, "leads_lote.csv", "text/csv")
         else:
-            st.info("Nenhum dado processado.")
+            st.info("Nenhum dado encontrado. Vá em 'Capturar (Lote)' para começar.")
 
-    # --- CAPTURA COM ID ---
-    elif menu == "➕ Capturar/Atualizar Lead":
-        st.header("⚡ Captura Inteligente por ID")
+    # --- ABA: CAPTURA EM LOTE ---
+    elif menu == "➕ Capturar (Lote)":
+        st.header("⚡ Processamento em Massa")
+        st.markdown("""
+        Cole todos os seus leads abaixo. O sistema identificará automaticamente a separação através do padrão **"ID do Cliente: X"**.
+        """)
         
-        c1, c2 = st.columns([1, 3])
-        with c1:
-            cliente_id = st.number_input("ID do Cliente:", min_value=1, step=1, help="Use o mesmo ID para atualizar um cliente existente.")
+        texto_input = st.text_area("Cole aqui sua lista de leads:", height=400, placeholder="ID do Cliente: 1\nTexto do lead 1...\n\nID do Cliente: 2\nTexto do lead 2...")
         
-        with c2:
-            st.info(f"O sistema irá somar ou atualizar as informações para o ID: {cliente_id}")
-
-        texto_input = st.text_area("Insira o texto para análise:", height=200)
-        
-        if st.button("Processar e Salvar"):
+        if st.button("🚀 Processar Lista Completa"):
             if texto_input:
-                with st.spinner("Analisando..."):
-                    resultado = processar_com_mistral(texto_input)
+                # Regex para encontrar "ID do Cliente" seguido de número
+                # Padrão flexível: aceita "ID do Cliente 1", "ID do Cliente: 1", "ID do Cliente - 1"
+                padrao = r"(ID do Cliente\s*[:\-\s]?\s*)(\d+)"
+                matches = list(re.finditer(padrao, texto_input, re.IGNORECASE))
+                
+                if not matches:
+                    st.error("Nenhum 'ID do Cliente' encontrado. Verifique a formatação do texto.")
+                else:
+                    total_leads = len(matches)
+                    progresso = st.progress(0)
+                    log_sucesso = 0
                     
-                    if "ERRO" not in resultado:
-                        dados = json.loads(resultado)
-                        dados['id'] = str(cliente_id) # Atribui o ID escolhido
+                    st.write(f"🔍 Identificados {total_leads} blocos de leads. Iniciando processamento...")
+
+                    for i, match in enumerate(matches):
+                        # Extrai o ID
+                        id_cliente = match.group(2)
                         
-                        # Lógica de Update ou Insert
-                        df_atual = st.session_state.df_leads
-                        if str(cliente_id) in df_atual['id'].values:
-                            # Remove a versão antiga e adiciona a nova (Atualização)
-                            st.session_state.df_leads = df_atual[df_atual['id'] != str(cliente_id)]
-                            st.session_state.df_leads = pd.concat([st.session_state.df_leads, pd.DataFrame([dados])], ignore_index=True)
-                            st.success(f"Dados do Cliente ID {cliente_id} atualizados!")
+                        # Define o início e fim do texto deste cliente
+                        inicio_txt = match.end()
+                        if i + 1 < total_leads:
+                            fim_txt = matches[i+1].start()
                         else:
-                            # Adiciona novo (Inclusão)
-                            st.session_state.df_leads = pd.concat([st.session_state.df_leads, pd.DataFrame([dados])], ignore_index=True)
-                            st.success(f"Novo Cliente ID {cliente_id} registrado!")
+                            fim_txt = len(texto_input)
                         
-                        st.json(dados)
-                        st.balloons()
-                    else:
-                        st.error(resultado)
+                        conteudo_lead = texto_input[inicio_txt:fim_txt].strip()
+                        
+                        # Processa com a IA
+                        resultado = processar_com_mistral(f"Lead ID {id_cliente}: {conteudo_lead}")
+                        
+                        if "ERRO" not in resultado:
+                            try:
+                                dados = json.loads(resultado)
+                                dados['id'] = str(id_cliente) # Garante que o ID é o capturado no texto
+                                
+                                # Lógica de Upsert (Atualizar se existe, Adicionar se novo)
+                                df_atual = st.session_state.df_leads
+                                if str(id_cliente) in df_atual['id'].values:
+                                    st.session_state.df_leads = df_atual[df_atual['id'] != str(id_cliente)]
+                                    st.session_state.df_leads = pd.concat([st.session_state.df_leads, pd.DataFrame([dados])], ignore_index=True)
+                                else:
+                                    st.session_state.df_leads = pd.concat([st.session_state.df_leads, pd.DataFrame([dados])], ignore_index=True)
+                                
+                                log_sucesso += 1
+                            except:
+                                st.error(f"Erro ao ler JSON do ID {id_cliente}")
+                        else:
+                            st.error(f"Erro na API para o ID {id_cliente}: {resultado}")
+                        
+                        # Atualiza barra de progresso
+                        progresso.progress((i + 1) / total_leads)
+                    
+                    st.success(f"✅ Processamento finalizado! {log_sucesso} de {total_leads} leads processados com sucesso.")
+                    st.balloons()
+            else:
+                st.warning("A área de texto está vazia.")
