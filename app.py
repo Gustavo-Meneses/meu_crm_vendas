@@ -7,8 +7,9 @@ import json
 st.set_page_config(page_title="Gestão Comercial Inteligente", layout="wide", page_icon="🏢")
 
 # --- INICIALIZAÇÃO DO BANCO DE DADOS EM MEMÓRIA ---
+# Adicionada a coluna 'id' como identificador único
 if 'df_leads' not in st.session_state:
-    st.session_state.df_leads = pd.DataFrame(columns=["nome", "empresa", "status", "historico", "score", "valor"])
+    st.session_state.df_leads = pd.DataFrame(columns=["id", "nome", "empresa", "status", "historico", "score", "valor"])
 
 if 'usuarios_db' not in st.session_state:
     st.session_state.usuarios_db = {"ADM": "1234"}
@@ -24,42 +25,39 @@ def processar_com_mistral(texto_entrada):
     try:
         api_key = st.secrets.get("MISTRAL_API_KEY")
         if not api_key:
-            return "ERRO_CONFIG: Chave MISTRAL_API_KEY não encontrada nos Secrets."
+            return "ERRO_CONFIG: Chave MISTRAL_API_KEY não encontrada."
         
         client = Mistral(api_key=api_key)
         
         prompt_sistema = (
-            "Você é um analista de dados comerciais experiente. Sua tarefa é extrair informações de leads e retornar APENAS um JSON puro. "
-            "Campos obrigatórios: nome, empresa, status (Prospecção, Reunião, Proposta, Fechado, Perdido), "
-            "historico (resumo executivo), score (0-100) e valor (numérico puro). "
-            "Não adicione texto explicativo, apenas o objeto JSON."
+            "Você é um analista comercial. Extraia do texto e retorne APENAS um JSON puro. "
+            "Campos: nome, empresa, status (Prospecção, Reunião, Proposta, Fechado, Perdido), "
+            "historico (resumo curto), score (0-100) e valor (numérico puro)."
         )
 
         response = client.chat.complete(
             model="mistral-small-latest",
             messages=[
                 {"role": "system", "content": prompt_sistema},
-                {"role": "user", "content": f"Extraia os dados deste lead: {texto_entrada}"}
+                {"role": "user", "content": f"Extraia os dados: {texto_entrada}"}
             ],
             response_format={"type": "json_object"}
         )
-        
         return response.choices[0].message.content
     except Exception as e:
         return f"ERRO_API: {str(e)}"
 
-# --- INTERFACE DE ACESSO (LOGIN E CADASTRO) ---
+# --- INTERFACE DE ACESSO ---
 if not st.session_state.logado:
     st.markdown("<h2 style='text-align: center;'>Acesso ao Sistema de Gestão Comercial</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: gray;'>Portal Administrativo de Alta Performance</p>", unsafe_allow_html=True)
     
-    tab_login, tab_cadastro = st.tabs(["🔐 Entrar", "📝 Criar Nova Conta"])
+    tab_login, tab_cadastro = st.tabs(["🔐 Entrar", "📝 Criar Conta"])
     
     with tab_login:
         _, col_l, _ = st.columns([1, 1, 1])
         with col_l:
-            u_login = st.text_input("Usuário", key="login_user")
-            p_login = st.text_input("Senha", type="password", key="login_pass")
+            u_login = st.text_input("Usuário")
+            p_login = st.text_input("Senha", type="password")
             if st.button("Autenticar", use_container_width=True):
                 if u_login in st.session_state.usuarios_db and st.session_state.usuarios_db[u_login] == p_login:
                     st.session_state.logado = True
@@ -71,105 +69,92 @@ if not st.session_state.logado:
     with tab_cadastro:
         _, col_c, _ = st.columns([1, 1, 1])
         with col_c:
-            st.info("O cadastro é válido apenas para a sessão atual.")
-            u_novo = st.text_input("Defina um Usuário", key="new_user")
-            p_novo = st.text_input("Defina uma Senha", type="password", key="new_pass")
-            p_conf = st.text_input("Confirme a Senha", type="password", key="conf_pass")
-            
-            if st.button("Finalizar Cadastro", use_container_width=True):
-                if not u_novo or not p_novo:
-                    st.warning("Preencha todos os campos obrigatórios.")
-                elif u_novo in st.session_state.usuarios_db:
-                    st.error("Este usuário já está registrado.")
-                elif p_novo != p_conf:
-                    st.error("As senhas digitadas não coincidem.")
-                else:
+            u_novo = st.text_input("Novo Usuário")
+            p_novo = st.text_input("Nova Senha", type="password")
+            if st.button("Cadastrar", use_container_width=True):
+                if u_novo and p_novo:
                     st.session_state.usuarios_db[u_novo] = p_novo
-                    st.success("Conta criada! Você já pode realizar o login.")
+                    st.success("Conta criada!")
+                else:
+                    st.warning("Preencha os campos.")
 
-# --- APP PRINCIPAL (SISTEMA LOGADO) ---
+# --- APP PRINCIPAL ---
 else:
     st.sidebar.title("🏢 Painel de Controle")
-    st.sidebar.markdown(f"Conectado como: **{st.session_state.usuario_atual}**")
+    st.sidebar.write(f"Usuário: **{st.session_state.usuario_atual}**")
+    menu = st.sidebar.radio("Navegação", ["📊 Dashboard Visual", "➕ Capturar/Atualizar Lead"])
     
-    menu = st.sidebar.radio("Navegação", ["📊 Dashboard Visual", "➕ Capturar Lead (IA)"])
-    
-    st.sidebar.divider()
-    if st.sidebar.button("Encerrar Sessão"):
+    if st.sidebar.button("Sair"):
         st.session_state.logado = False
         st.rerun()
 
-    # --- ABA: DASHBOARD ---
+    # --- DASHBOARD ---
     if menu == "📊 Dashboard Visual":
-        st.header("📊 Inteligência e Performance de Vendas")
+        st.header("📊 Inteligência de Vendas")
         
         if not st.session_state.df_leads.empty:
             df = st.session_state.df_leads.copy()
-            # Conversão para garantir funcionamento dos gráficos
             df['valor'] = pd.to_numeric(df['valor'], errors='coerce').fillna(0)
             df['score'] = pd.to_numeric(df['score'], errors='coerce').fillna(0)
 
-            # --- LINHA 1: MÉTRICAS DE IMPACTO ---
             m1, m2, m3 = st.columns(3)
-            m1.metric("Leads Totais", len(df))
-            m2.metric("Pipeline Financeiro", f"R$ {df['valor'].sum():,.2f}")
-            m3.metric("Qualidade Média", f"{df['score'].mean():.1f} pts")
+            m1.metric("Clientes Únicos", len(df))
+            m2.metric("Pipeline Total", f"R$ {df['valor'].sum():,.2f}")
+            m3.metric("Score Médio", f"{df['score'].mean():.1f} pts")
 
             st.divider()
-
-            # --- LINHA 2: ANÁLISE GRÁFICA (PARA PRINTS E APRESENTAÇÃO) ---
             g1, g2 = st.columns(2)
-
             with g1:
-                st.subheader("🎯 Saúde do Funil (Status)")
-                status_dist = df['status'].value_counts()
-                st.bar_chart(status_dist, color="#2E86C1")
-
+                st.subheader("🎯 Status por Cliente")
+                st.bar_chart(df['status'].value_counts())
             with g2:
-                st.subheader("💰 Maiores Oportunidades (R$)")
-                df_top = df.sort_values('valor', ascending=False).head(8)
-                st.bar_chart(data=df_top, x='empresa', y='valor', color="#28B463")
+                st.subheader("💰 Volume por ID (Top 10)")
+                st.bar_chart(data=df.head(10), x='id', y='valor')
 
             st.divider()
-            
-            # --- TABELA DE DADOS ---
-            st.subheader("📋 Relatório Detalhado")
+            st.subheader("📋 Base de Clientes")
             st.dataframe(df, use_container_width=True)
             
-            # Exportação para Power BI / Excel
             csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Exportar para Power BI (CSV)", csv, "relatorio_crm_ia.csv", "text/csv")
+            st.download_button("📥 Exportar CSV", csv, "leads_id.csv", "text/csv")
         else:
-            st.info("O sistema ainda não possui dados. Capture um lead via IA para gerar os indicadores.")
+            st.info("Nenhum dado processado.")
 
-    # --- ABA: CAPTURA IA ---
-    elif menu == "➕ Capturar Lead (IA)":
-        st.header("⚡ Extração de Dados com IA")
-        st.write("Insira textos de reuniões, e-mails ou WhatsApp para converter em dados estruturados.")
+    # --- CAPTURA COM ID ---
+    elif menu == "➕ Capturar/Atualizar Lead":
+        st.header("⚡ Captura Inteligente por ID")
         
-        texto_input = st.text_area("Notas do Lead:", height=250, placeholder="Ex: Falei com o João da Empresa X, ele quer um projeto de 10 mil...")
+        c1, c2 = st.columns([1, 3])
+        with c1:
+            cliente_id = st.number_input("ID do Cliente:", min_value=1, step=1, help="Use o mesmo ID para atualizar um cliente existente.")
         
-        if st.button("Processar e Registrar"):
+        with c2:
+            st.info(f"O sistema irá somar ou atualizar as informações para o ID: {cliente_id}")
+
+        texto_input = st.text_area("Insira o texto para análise:", height=200)
+        
+        if st.button("Processar e Salvar"):
             if texto_input:
-                with st.spinner("A Mistral AI está estruturando os dados..."):
+                with st.spinner("Analisando..."):
                     resultado = processar_com_mistral(texto_input)
                     
-                    if "ERRO" in resultado:
-                        st.error(f"Falha na captura: {resultado}")
+                    if "ERRO" not in resultado:
+                        dados = json.loads(resultado)
+                        dados['id'] = str(cliente_id) # Atribui o ID escolhido
+                        
+                        # Lógica de Update ou Insert
+                        df_atual = st.session_state.df_leads
+                        if str(cliente_id) in df_atual['id'].values:
+                            # Remove a versão antiga e adiciona a nova (Atualização)
+                            st.session_state.df_leads = df_atual[df_atual['id'] != str(cliente_id)]
+                            st.session_state.df_leads = pd.concat([st.session_state.df_leads, pd.DataFrame([dados])], ignore_index=True)
+                            st.success(f"Dados do Cliente ID {cliente_id} atualizados!")
+                        else:
+                            # Adiciona novo (Inclusão)
+                            st.session_state.df_leads = pd.concat([st.session_state.df_leads, pd.DataFrame([dados])], ignore_index=True)
+                            st.success(f"Novo Cliente ID {cliente_id} registrado!")
+                        
+                        st.json(dados)
+                        st.balloons()
                     else:
-                        try:
-                            dados_json = json.loads(resultado)
-                            # Adiciona ao histórico da sessão
-                            st.session_state.df_leads = pd.concat([
-                                st.session_state.df_leads, 
-                                pd.DataFrame([dados_json])
-                            ], ignore_index=True)
-                            
-                            st.success("Lead registrado com sucesso no Dashboard!")
-                            st.balloons()
-                            st.json(dados_json)
-                        except:
-                            st.error("Erro ao converter resposta da IA em tabela.")
-                            st.code(resultado)
-            else:
-                st.warning("Por favor, insira algum texto para análise.")
+                        st.error(resultado)
